@@ -21,13 +21,17 @@ interface Source {
   title: string;
   filename: string;
   content: string;
+  summary?: string;  // Full document summary
+  concepts?: string;  // Comma-separated concepts/keywords
   score: number;
+  document_id?: string;
+  type?: string;
+  file_type?: string;
+  fileUrl?: string;
+  // Legacy fields for backwards compatibility
   chunk_id?: string;
   page_number?: number;
   section?: string;
-  document_id?: string;
-  type?: string;
-  fileUrl?: string;
   start_time?: number;
   end_time?: number;
   duration?: number;
@@ -66,6 +70,23 @@ export const SourceCards: React.FC<SourceCardsProps> = ({ sources, onSourceClick
     toast.success('Source content copied!');
   };
 
+  // Clean up AI-generated intro text from summaries
+  const cleanSummary = (text: string): string => {
+    if (!text) return '';
+    // Remove common AI preamble patterns
+    const patterns = [
+      /^Here is a comprehensive summary of the document[^:]*:\s*/i,
+      /^Here is a summary[^:]*:\s*/i,
+      /^This document (discusses|covers|explores|examines|provides)[^.]*\.\s*/i,
+      /^Summary:\s*/i,
+    ];
+    let cleaned = text;
+    for (const pattern of patterns) {
+      cleaned = cleaned.replace(pattern, '');
+    }
+    return cleaned.trim();
+  };
+
   if (!sources || sources.length === 0) {
     console.log('SourceCards - returning null because no sources');
     return null;
@@ -75,10 +96,10 @@ export const SourceCards: React.FC<SourceCardsProps> = ({ sources, onSourceClick
     <Box sx={{ mt: 2, mb: 1, overflow: 'visible' }}>
       <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1.5 }}>
         <Typography variant="subtitle2" fontWeight={600} color="text.secondary">
-          📚 Sources
+          📚 Relevant Documents
         </Typography>
         <Chip
-          label={`${sources.length} reference${sources.length > 1 ? 's' : ''}`}
+          label={`${sources.length} document${sources.length > 1 ? 's' : ''} found`}
           size="small"
           variant="outlined"
         />
@@ -111,8 +132,15 @@ export const SourceCards: React.FC<SourceCardsProps> = ({ sources, onSourceClick
         }}
       >
         {sources.map((source, idx) => {
-          const isVideo = source.content_type === 'video' ||
-                         (source.start_time !== undefined && source.start_time !== null);
+          // Parse concepts if provided as comma-separated string
+          const conceptsList = source.concepts
+            ? source.concepts.split(',').map(c => c.trim()).filter(c => c).slice(0, 4)
+            : [];
+
+          // Use summary if available, otherwise fall back to content
+          // Clean up any AI-generated preamble text
+          const rawContent = source.summary || source.content || '';
+          const displayContent = cleanSummary(rawContent);
 
           return (
             <MotionPaper
@@ -121,9 +149,9 @@ export const SourceCards: React.FC<SourceCardsProps> = ({ sources, onSourceClick
               whileHover={{ y: -4 }}
               whileTap={{ scale: 0.98 }}
               sx={{
-                p: 2,
-                minWidth: 280,
-                maxWidth: 320,
+                p: 2.5,
+                minWidth: 340,
+                maxWidth: 400,
                 cursor: onSourceClick ? 'pointer' : 'default',
                 border: '2px solid',
                 borderColor: 'divider',
@@ -138,28 +166,24 @@ export const SourceCards: React.FC<SourceCardsProps> = ({ sources, onSourceClick
               onClick={() => onSourceClick && onSourceClick(source)}
             >
               {/* Header */}
-              <Stack direction="row" spacing={1} alignItems="flex-start" sx={{ mb: 1.5 }}>
+              <Stack direction="row" spacing={1.5} alignItems="flex-start" sx={{ mb: 1.5 }}>
                 <Box
                   sx={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: 1,
-                    backgroundColor: isVideo ? 'error.light' : '#19A9FF20',
+                    width: 40,
+                    height: 40,
+                    borderRadius: 1.5,
+                    backgroundColor: '#19A9FF20',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     flexShrink: 0,
                   }}
                 >
-                  {isVideo ? (
-                    <VideoIcon sx={{ fontSize: 18, color: 'error.dark' }} />
-                  ) : (
-                    <DocumentIcon sx={{ fontSize: 18, color: 'primary.dark' }} />
-                  )}
+                  <DocumentIcon sx={{ fontSize: 22, color: 'primary.dark' }} />
                 </Box>
                 <Box sx={{ flex: 1, minWidth: 0 }}>
                   <Typography
-                    variant="subtitle2"
+                    variant="subtitle1"
                     fontWeight={600}
                     sx={{
                       overflow: 'hidden',
@@ -172,15 +196,22 @@ export const SourceCards: React.FC<SourceCardsProps> = ({ sources, onSourceClick
                   >
                     {source.title}
                   </Typography>
-                  {source.section && source.section !== "Document Summary" && (
-                    <Typography variant="caption" color="text.secondary">
-                      {source.section}
+                  {source.file_type && (
+                    <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase' }}>
+                      {source.file_type}
                     </Typography>
                   )}
                 </Box>
+                {/* Relevance Score */}
+                <Chip
+                  label={`${Math.round(source.score * 100)}% match`}
+                  size="small"
+                  color="primary"
+                  sx={{ height: 26, fontSize: '0.8rem', fontWeight: 600 }}
+                />
               </Stack>
 
-              {/* Content Preview */}
+              {/* Document Summary */}
               <Typography
                 variant="body2"
                 color="text.secondary"
@@ -188,58 +219,51 @@ export const SourceCards: React.FC<SourceCardsProps> = ({ sources, onSourceClick
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                   display: '-webkit-box',
-                  WebkitLineClamp: 3,
+                  WebkitLineClamp: 5,  // Show more lines for document summaries
                   WebkitBoxOrient: 'vertical',
                   mb: 1.5,
-                  lineHeight: 1.5,
+                  lineHeight: 1.6,
                   fontSize: '0.875rem',
                 }}
               >
-                {source.content}
+                {displayContent}
               </Typography>
 
-              {/* Footer */}
-              <Stack direction="row" justifyContent="space-between" alignItems="center">
-                <Stack direction="row" spacing={1} alignItems="center">
-                  {source.page_number && (
+              {/* Concepts/Keywords Tags */}
+              {conceptsList.length > 0 && (
+                <Stack direction="row" spacing={0.5} flexWrap="wrap" sx={{ mb: 1.5, gap: 0.5 }}>
+                  {conceptsList.map((concept, i) => (
                     <Chip
-                      label={`Page ${source.page_number}`}
+                      key={i}
+                      label={concept}
                       size="small"
                       variant="outlined"
-                      sx={{ height: 24, fontSize: '0.75rem' }}
+                      sx={{
+                        height: 22,
+                        fontSize: '0.7rem',
+                        backgroundColor: 'action.hover',
+                      }}
                     />
-                  )}
-                  {source.start_time !== undefined && source.start_time !== null && (
-                    <Chip
-                      label={formatTimestamp(source.start_time)}
-                      size="small"
-                      variant="outlined"
-                      color="error"
-                      sx={{ height: 24, fontSize: '0.75rem' }}
-                    />
-                  )}
-                  <Chip
-                    label={`${Math.round(source.score * 100)}%`}
-                    size="small"
-                    color="primary"
-                    sx={{ height: 24, fontSize: '0.75rem' }}
-                  />
+                  ))}
                 </Stack>
+              )}
 
+              {/* Footer Actions */}
+              <Stack direction="row" justifyContent="flex-end" alignItems="center">
                 <Stack direction="row" spacing={0.5}>
-                  <Tooltip title="Copy content">
+                  <Tooltip title="Copy summary">
                     <IconButton
                       size="small"
                       onClick={(e) => {
                         e.stopPropagation();
-                        handleCopyContent(source.content);
+                        handleCopyContent(displayContent);
                       }}
                     >
                       <CopyIcon fontSize="small" />
                     </IconButton>
                   </Tooltip>
                   {onSourceClick && (
-                    <Tooltip title="Open source">
+                    <Tooltip title="Open document">
                       <IconButton size="small">
                         <OpenIcon fontSize="small" />
                       </IconButton>

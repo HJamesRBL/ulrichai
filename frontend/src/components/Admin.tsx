@@ -1,7 +1,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Upload, FileText, X, Search, Download, Eye } from 'lucide-react';
+import { Upload, FileText, X, Search, Download, Eye, RotateCcw, Save, Layers } from 'lucide-react';
 import { config } from '../config';
 import './Admin.css';
+
+interface BatchFileMetadata extends DocumentMetadata {
+  file: File;
+  filename: string;
+}
 
 interface DocumentMetadata {
   displayName: string;
@@ -67,6 +72,27 @@ const Admin: React.FC = () => {
   const [filterType, setFilterType] = useState('all');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // System prompt state
+  const [systemPrompt, setSystemPrompt] = useState('');
+  const [defaultPrompt, setDefaultPrompt] = useState('');
+  const [isCustomPrompt, setIsCustomPrompt] = useState(false);
+  const [promptLoading, setPromptLoading] = useState(false);
+  const [promptSaving, setPromptSaving] = useState(false);
+  const [promptError, setPromptError] = useState<string | null>(null);
+  const [promptSuccess, setPromptSuccess] = useState<string | null>(null);
+
+  // Batch upload state
+  const [batchMode, setBatchMode] = useState(false);
+  const [batchFiles, setBatchFiles] = useState<BatchFileMetadata[]>([]);
+  const [isBatchUploading, setIsBatchUploading] = useState(false);
+
+  // Batch upload progress state
+  const [batchProgress, setBatchProgress] = useState<{
+    percent: number;
+    stage: string;
+    isActive: boolean;
+  }>({ percent: 0, stage: '', isActive: false });
 
   const fetchDocuments = useCallback(async () => {
     setIsLoading(true);
@@ -141,6 +167,81 @@ const Admin: React.FC = () => {
 
     return () => clearTimeout(timer);
   }, [fetchDocuments]);
+
+  // Fetch system prompt on load
+  useEffect(() => {
+    const fetchSystemPrompt = async () => {
+      setPromptLoading(true);
+      try {
+        const response = await fetch(`${config.API_BASE_URL}/api/ingestion/system-prompt`);
+        if (response.ok) {
+          const data = await response.json();
+          setSystemPrompt(data.prompt);
+          setDefaultPrompt(data.default_prompt);
+          setIsCustomPrompt(data.is_custom);
+        }
+      } catch (error) {
+        console.error('Error fetching system prompt:', error);
+        setPromptError('Failed to load system prompt');
+      } finally {
+        setPromptLoading(false);
+      }
+    };
+    fetchSystemPrompt();
+  }, []);
+
+  const handleSavePrompt = async () => {
+    setPromptSaving(true);
+    setPromptError(null);
+    setPromptSuccess(null);
+    try {
+      const response = await fetch(`${config.API_BASE_URL}/api/ingestion/system-prompt`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: systemPrompt })
+      });
+      if (response.ok) {
+        setIsCustomPrompt(true);
+        setPromptSuccess('System prompt saved successfully!');
+        setTimeout(() => setPromptSuccess(null), 3000);
+      } else {
+        const error = await response.text();
+        setPromptError(`Failed to save: ${error}`);
+      }
+    } catch (error) {
+      setPromptError(`Failed to save: ${error}`);
+    } finally {
+      setPromptSaving(false);
+    }
+  };
+
+  const handleResetPrompt = async () => {
+    if (!window.confirm('Reset to default system prompt? This will discard your custom prompt.')) {
+      return;
+    }
+    setPromptSaving(true);
+    setPromptError(null);
+    setPromptSuccess(null);
+    try {
+      const response = await fetch(`${config.API_BASE_URL}/api/ingestion/system-prompt/reset`, {
+        method: 'POST'
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setSystemPrompt(data.prompt);
+        setIsCustomPrompt(false);
+        setPromptSuccess('System prompt reset to default!');
+        setTimeout(() => setPromptSuccess(null), 3000);
+      } else {
+        const error = await response.text();
+        setPromptError(`Failed to reset: ${error}`);
+      }
+    } catch (error) {
+      setPromptError(`Failed to reset: ${error}`);
+    } finally {
+      setPromptSaving(false);
+    }
+  };
 
   const handleViewDocument = async (doc: Document) => {
     if (doc.fileUrl) {
@@ -312,6 +413,167 @@ const Admin: React.FC = () => {
     }
   };
 
+  // Batch upload handlers
+  const handleBatchFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const MAX_FILE_SIZE = 1610612736; // 1.5 GB in bytes
+      const newFiles: BatchFileMetadata[] = [];
+
+      for (let i = 0; i < e.target.files.length; i++) {
+        const file = e.target.files[i];
+
+        if (file.size > MAX_FILE_SIZE) {
+          alert(`File "${file.name}" is too large and will be skipped.`);
+          continue;
+        }
+
+        const nameWithoutExt = file.name.replace(/\.[^/.]+$/, '');
+        newFiles.push({
+          file,
+          filename: file.name,
+          displayName: nameWithoutExt.replace(/[_-]/g, ' '),
+          documentType: isVideoFile(file.name) ? 'video' : 'article',
+          documentSource: 'institute',
+          humanCapabilityDomain: 'hr',
+          author: '',
+          publicationDate: '',
+          description: '',
+          allowDownload: true,
+          showInViewer: true
+        });
+      }
+
+      setBatchFiles(prev => [...prev, ...newFiles]);
+      e.target.value = ''; // Clear input
+    }
+  };
+
+  const handleBatchMetadataChange = (index: number, field: keyof BatchFileMetadata, value: string) => {
+    setBatchFiles(prev => prev.map((item, i) =>
+      i === index ? { ...item, [field]: value } : item
+    ));
+  };
+
+  const handleRemoveBatchFile = (index: number) => {
+    setBatchFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleBatchUpload = async () => {
+    if (batchFiles.length === 0) {
+      alert('Please select files to upload');
+      return;
+    }
+
+    // Validate all files have display names
+    const missingNames = batchFiles.filter(f => !f.displayName.trim());
+    if (missingNames.length > 0) {
+      alert('Please provide display names for all files');
+      return;
+    }
+
+    setIsBatchUploading(true);
+    setBatchProgress({ percent: 0, stage: 'Preparing', isActive: true });
+
+    const formData = new FormData();
+
+    // Add all files
+    batchFiles.forEach(item => {
+      formData.append('files', item.file);
+    });
+
+    // Add metadata for each file
+    const metadataList = batchFiles.map(item => ({
+      filename: item.filename,
+      displayName: item.displayName,
+      documentType: item.documentType,
+      documentSource: item.documentSource,
+      humanCapabilityDomain: item.humanCapabilityDomain,
+      author: item.author,
+      publicationDate: item.publicationDate,
+      description: item.description,
+      allowDownload: true,
+      showInViewer: true
+    }));
+    formData.append('metadata_list', JSON.stringify(metadataList));
+
+    // Add default chunking config
+    formData.append('chunking_config', JSON.stringify(chunkingConfig));
+
+    // Use XMLHttpRequest for upload progress tracking
+    const xhr = new XMLHttpRequest();
+
+    xhr.upload.addEventListener('progress', (event) => {
+      if (event.lengthComputable) {
+        // Upload takes 0-90% of progress bar
+        const uploadPercent = Math.round((event.loaded / event.total) * 90);
+        setBatchProgress({
+          percent: uploadPercent,
+          stage: 'Uploading',
+          isActive: true
+        });
+      }
+    });
+
+    xhr.addEventListener('load', () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const result = JSON.parse(xhr.responseText);
+          console.log('Batch upload successful:', result);
+
+          // Show processing stage briefly
+          setBatchProgress({ percent: 95, stage: 'Queued', isActive: true });
+
+          setTimeout(() => {
+            setBatchProgress({ percent: 100, stage: 'Complete', isActive: true });
+
+            const queuedCount = result.results.filter((r: any) => r.status === 'queued').length;
+            alert(`Batch upload complete! ${queuedCount} file${queuedCount !== 1 ? 's' : ''} queued for processing.`);
+
+            // Reset batch state after a brief delay to show 100%
+            setTimeout(() => {
+              setBatchFiles([]);
+              setBatchMode(false);
+              setBatchProgress({ percent: 0, stage: '', isActive: false });
+              setIsBatchUploading(false);
+              fetchDocuments();
+            }, 500);
+          }, 300);
+        } catch (e) {
+          console.error('Error parsing response:', e);
+          alert('Upload completed but response parsing failed');
+          setBatchProgress({ percent: 0, stage: '', isActive: false });
+          setIsBatchUploading(false);
+        }
+      } else {
+        console.error('Batch upload failed:', xhr.statusText);
+        alert(`Batch upload failed: ${xhr.statusText}`);
+        setBatchProgress({ percent: 0, stage: '', isActive: false });
+        setIsBatchUploading(false);
+      }
+    });
+
+    xhr.addEventListener('error', () => {
+      console.error('Batch upload error');
+      alert('Batch upload failed: Network error');
+      setBatchProgress({ percent: 0, stage: '', isActive: false });
+      setIsBatchUploading(false);
+    });
+
+    xhr.addEventListener('abort', () => {
+      console.log('Batch upload aborted');
+      setBatchProgress({ percent: 0, stage: '', isActive: false });
+      setIsBatchUploading(false);
+    });
+
+    xhr.open('POST', `${config.API_BASE_URL}/api/ingestion/bulk-upload`);
+    xhr.send(formData);
+  };
+
+  const handleCancelBatch = () => {
+    setBatchFiles([]);
+    setBatchMode(false);
+  };
+
   const formatDate = (dateString: string) => {
     if (!dateString) return '-';
     try {
@@ -331,37 +593,50 @@ const Admin: React.FC = () => {
 
       <div className="admin-content">
         <div className="upload-section">
-          <h2>Upload Content</h2>
-          <div className="upload-area">
-            <input
-              type="file"
-              id="file-upload"
-              accept=".pdf,.docx,.pptx,.mp4,.webm,.mov,.avi,.mkv"
-              onChange={handleFileSelect}
-              hidden
-            />
-            <label htmlFor="file-upload" className="upload-label">
-              <Upload size={48} />
-              <p>Click to select a file</p>
-              <span>Documents: PDF, DOCX, PPTX | Videos: MP4, WEBM, MOV, AVI, MKV (Max: 1.5 GB)</span>
-            </label>
-            {selectedFile && (
-              <div className="selected-file">
-                <FileText size={20} />
-                <span>{selectedFile.name}</span>
-                <span className="file-size">({formatFileSize(selectedFile.size)})</span>
-                <button 
-                  onClick={() => setSelectedFile(null)}
-                  className="remove-file"
-                >
-                  <X size={16} />
-                </button>
-              </div>
+          <div className="upload-section-header">
+            <h2>Upload Content</h2>
+            {!batchMode && !selectedFile && (
+              <button
+                className="batch-upload-button"
+                onClick={() => setBatchMode(true)}
+              >
+                <Layers size={16} />
+                Upload Batch
+              </button>
             )}
           </div>
-        </div>
 
-        {selectedFile && (
+          {!batchMode ? (
+            <>
+              <div className="upload-area">
+                <input
+                  type="file"
+                  id="file-upload"
+                  accept=".pdf,.docx,.pptx,.mp4,.webm,.mov,.avi,.mkv"
+                  onChange={handleFileSelect}
+                  hidden
+                />
+                <label htmlFor="file-upload" className="upload-label">
+                  <Upload size={48} />
+                  <p>Click to select a file</p>
+                  <span>Documents: PDF, DOCX, PPTX | Videos: MP4, WEBM, MOV, AVI, MKV (Max: 1.5 GB)</span>
+                </label>
+                {selectedFile && (
+                  <div className="selected-file">
+                    <FileText size={20} />
+                    <span>{selectedFile.name}</span>
+                    <span className="file-size">({formatFileSize(selectedFile.size)})</span>
+                    <button
+                      onClick={() => setSelectedFile(null)}
+                      className="remove-file"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {selectedFile && (
           <>
             <div className="metadata-section">
               <h2>Content Information</h2>
@@ -603,6 +878,178 @@ const Admin: React.FC = () => {
             </div>
           </>
         )}
+            </>
+          ) : (
+            /* Batch Upload Mode */
+            <div className="batch-upload-section">
+              <div className="batch-upload-header">
+                <h3>Batch Upload - {batchFiles.length} file{batchFiles.length !== 1 ? 's' : ''} selected</h3>
+                <div className="batch-header-actions">
+                  <input
+                    type="file"
+                    id="batch-file-upload"
+                    accept=".pdf,.docx,.pptx,.mp4,.webm,.mov,.avi,.mkv"
+                    onChange={handleBatchFileSelect}
+                    multiple
+                    hidden
+                  />
+                  <label htmlFor="batch-file-upload" className="add-files-button">
+                    <Upload size={16} />
+                    Add Files
+                  </label>
+                  <button className="cancel-batch-button" onClick={handleCancelBatch}>
+                    <X size={16} />
+                    Cancel
+                  </button>
+                </div>
+              </div>
+
+              {batchFiles.length === 0 ? (
+                <div className="batch-empty-state">
+                  <Layers size={48} />
+                  <p>No files selected</p>
+                  <label htmlFor="batch-file-upload" className="upload-label-inline">
+                    Click here to select multiple files
+                  </label>
+                </div>
+              ) : (
+                <>
+                  <div className="batch-table-container">
+                    <table className="batch-table">
+                      <thead>
+                        <tr>
+                          <th style={{ width: '30px' }}></th>
+                          <th>File</th>
+                          <th>Display Name *</th>
+                          <th>Source</th>
+                          <th>Type</th>
+                          <th>Domain</th>
+                          <th>Author</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {batchFiles.map((item, index) => (
+                          <tr key={index}>
+                            <td>
+                              <button
+                                className="remove-batch-file"
+                                onClick={() => handleRemoveBatchFile(index)}
+                                title="Remove file"
+                              >
+                                <X size={14} />
+                              </button>
+                            </td>
+                            <td className="filename-cell">
+                              <FileText size={14} />
+                              <span title={item.filename}>{item.filename.length > 25 ? item.filename.substring(0, 22) + '...' : item.filename}</span>
+                            </td>
+                            <td>
+                              <input
+                                type="text"
+                                value={item.displayName}
+                                onChange={(e) => handleBatchMetadataChange(index, 'displayName', e.target.value)}
+                                placeholder="Display name"
+                                className="batch-input"
+                              />
+                            </td>
+                            <td>
+                              <select
+                                value={item.documentSource}
+                                onChange={(e) => handleBatchMetadataChange(index, 'documentSource', e.target.value)}
+                                className="batch-select"
+                              >
+                                <option value="institute">Institute</option>
+                                <option value="dave-ulrich-hr-academy">Dave Ulrich HR Academy</option>
+                                <option value="hr-development">HR Development</option>
+                                <option value="hr-excellence">Leading for HR Excellence</option>
+                                <option value="leadership-code-academy">Leadership Code Academy</option>
+                                <option value="leadership-development">Leadership Development</option>
+                                <option value="reinventing-organization">Reinventing the Organization</option>
+                                <option value="talent-academy">Talent Academy</option>
+                              </select>
+                            </td>
+                            <td>
+                              <select
+                                value={item.documentType}
+                                onChange={(e) => handleBatchMetadataChange(index, 'documentType', e.target.value)}
+                                className="batch-select"
+                              >
+                                <option value="article">Article</option>
+                                <option value="case-study">Case Study</option>
+                                <option value="playbook">Playbook</option>
+                                <option value="powerpoint">PowerPoint</option>
+                                <option value="tool">Tool</option>
+                                <option value="toolkit">Toolkit</option>
+                                <option value="video">Video</option>
+                                <option value="whitepaper">Whitepaper</option>
+                              </select>
+                            </td>
+                            <td>
+                              <select
+                                value={item.humanCapabilityDomain}
+                                onChange={(e) => handleBatchMetadataChange(index, 'humanCapabilityDomain', e.target.value)}
+                                className="batch-select"
+                              >
+                                <option value="hr">HR</option>
+                                <option value="talent">Talent</option>
+                                <option value="leadership">Leadership</option>
+                                <option value="organization">Organization</option>
+                              </select>
+                            </td>
+                            <td>
+                              <input
+                                type="text"
+                                value={item.author}
+                                onChange={(e) => handleBatchMetadataChange(index, 'author', e.target.value)}
+                                placeholder="Author"
+                                className="batch-input batch-input-small"
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="batch-action-section">
+                    <button
+                      className="upload-button"
+                      onClick={handleBatchUpload}
+                      disabled={isBatchUploading || batchFiles.some(f => !f.displayName.trim())}
+                    >
+                      {isBatchUploading ? 'Uploading...' : `Upload ${batchFiles.length} File${batchFiles.length !== 1 ? 's' : ''}`}
+                    </button>
+                    <span className="batch-note">
+                      All files will be downloadable and visible in the viewer.
+                    </span>
+                  </div>
+
+                  {/* Batch Upload Progress Bar */}
+                  {batchProgress.isActive && (
+                    <div className="batch-progress-container">
+                      <div className="batch-progress-info">
+                        <span className="batch-progress-count">
+                          {batchFiles.length} document{batchFiles.length !== 1 ? 's' : ''}
+                        </span>
+                      </div>
+                      <div className="batch-progress-bar">
+                        <div
+                          className="batch-progress-fill"
+                          style={{ width: `${batchProgress.percent}%` }}
+                        >
+                          <span className="batch-progress-stage">{batchProgress.stage}</span>
+                        </div>
+                      </div>
+                      <div className="batch-progress-percent">
+                        {batchProgress.percent}%
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="documents-list-section">
@@ -738,6 +1185,112 @@ const Admin: React.FC = () => {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* System Prompt Configuration */}
+      <div className="system-prompt-section">
+        <div className="system-prompt-header">
+          <h2>AI System Prompt</h2>
+          <p>Configure the system prompt that guides the AI's behavior and responses.</p>
+          {isCustomPrompt && (
+            <span className="custom-badge">Custom Prompt Active</span>
+          )}
+        </div>
+
+        {promptError && (
+          <div style={{
+            padding: '10px',
+            background: '#fee',
+            color: '#c00',
+            margin: '10px 0',
+            borderRadius: '4px'
+          }}>
+            {promptError}
+          </div>
+        )}
+
+        {promptSuccess && (
+          <div style={{
+            padding: '10px',
+            background: '#efe',
+            color: '#080',
+            margin: '10px 0',
+            borderRadius: '4px'
+          }}>
+            {promptSuccess}
+          </div>
+        )}
+
+        {promptLoading ? (
+          <div style={{ padding: '20px', textAlign: 'center', color: '#666' }}>
+            Loading system prompt...
+          </div>
+        ) : (
+          <>
+            <div className="prompt-editor">
+              <textarea
+                value={systemPrompt}
+                onChange={(e) => setSystemPrompt(e.target.value)}
+                placeholder="Enter the system prompt for the AI..."
+                rows={15}
+                style={{
+                  width: '100%',
+                  padding: '12px',
+                  fontFamily: 'monospace',
+                  fontSize: '13px',
+                  lineHeight: '1.5',
+                  border: '1px solid #ddd',
+                  borderRadius: '4px',
+                  resize: 'vertical',
+                  minHeight: '300px'
+                }}
+              />
+            </div>
+
+            <div className="prompt-actions" style={{
+              marginTop: '16px',
+              display: 'flex',
+              gap: '12px',
+              alignItems: 'center'
+            }}>
+              <button
+                className="upload-button"
+                onClick={handleSavePrompt}
+                disabled={promptSaving || !systemPrompt.trim()}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                <Save size={16} />
+                {promptSaving ? 'Saving...' : 'Save Prompt'}
+              </button>
+
+              <button
+                className="action-button"
+                onClick={handleResetPrompt}
+                disabled={promptSaving}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '8px 16px',
+                  background: '#f5f5f5',
+                  border: '1px solid #ddd',
+                  borderRadius: '4px',
+                  cursor: 'pointer'
+                }}
+                title="Reset to default prompt"
+              >
+                <RotateCcw size={16} />
+                Reset to Default
+              </button>
+
+              {isCustomPrompt && (
+                <span style={{ color: '#666', fontSize: '13px', marginLeft: 'auto' }}>
+                  Using custom prompt
+                </span>
+              )}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

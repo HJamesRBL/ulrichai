@@ -21,13 +21,17 @@ interface Source {
   title: string;
   filename: string;
   content: string;
+  summary?: string;  // Full document summary
+  concepts?: string;  // Comma-separated concepts/keywords
   score: number;
+  document_id?: string;
+  type?: string;
+  file_type?: string;
+  fileUrl?: string;
+  // Legacy fields for backwards compatibility
   chunk_id?: string;
   page_number?: number;
   section?: string;
-  document_id?: string;
-  type?: string;
-  fileUrl?: string;
   start_time?: number;
   end_time?: number;
   duration?: number;

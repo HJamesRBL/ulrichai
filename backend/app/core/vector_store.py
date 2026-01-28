@@ -67,24 +67,49 @@ class VectorStore:
             raise
 
     def delete_by_filename(self, filename: str) -> Dict[str, Any]:
-        """Delete all vectors associated with a filename from Pinecone"""
+        """Delete all vectors associated with a filename from all Pinecone namespaces"""
         try:
-            # Query to find all vectors with this filename
-            # First, we need to list all vectors with this filename using metadata filtering
             logger.info(f"Deleting vectors for filename: {filename}")
 
-            # Delete by metadata filter
-            # Pinecone's delete supports filtering by metadata
-            delete_response = self.index.delete(
-                filter={
-                    "filename": {"$eq": filename}
-                }
-            )
+            # Delete from all namespaces where document data is stored
+            namespaces = ['chunks', 'sections', 'documents']
+            deleted_namespaces = []
+            errors = []
 
-            logger.info(f"Successfully deleted vectors for {filename}")
+            for namespace in namespaces:
+                try:
+                    # Delete by metadata filter in each namespace
+                    self.index.delete(
+                        filter={
+                            "filename": {"$eq": filename}
+                        },
+                        namespace=namespace
+                    )
+                    deleted_namespaces.append(namespace)
+                    logger.info(f"Deleted vectors for {filename} from namespace '{namespace}'")
+                except Exception as ns_error:
+                    # Log but continue with other namespaces
+                    logger.warning(f"Could not delete from namespace '{namespace}': {ns_error}")
+                    errors.append(f"{namespace}: {str(ns_error)}")
+
+            # Also try the default namespace (no namespace specified) for backwards compatibility
+            try:
+                self.index.delete(
+                    filter={
+                        "filename": {"$eq": filename}
+                    }
+                )
+                deleted_namespaces.append("default")
+                logger.info(f"Deleted vectors for {filename} from default namespace")
+            except Exception as default_error:
+                logger.warning(f"Could not delete from default namespace: {default_error}")
+
+            logger.info(f"Successfully deleted vectors for {filename} from namespaces: {deleted_namespaces}")
             return {
                 "status": "success",
                 "filename": filename,
+                "namespaces_deleted": deleted_namespaces,
+                "errors": errors if errors else None,
                 "message": f"Deleted all vectors for {filename}"
             }
 

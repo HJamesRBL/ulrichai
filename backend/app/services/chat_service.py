@@ -230,9 +230,9 @@ Provide a comprehensive, authoritative response in Dave Ulrich's voice based on 
                     }
                     logger.info(f"Filtering by course_id: {context.get('course_id')}")
 
-            # Search across all namespaces where vectors are stored
+            # Search only document-level embeddings for document discovery mode
             all_matches = []
-            namespaces_to_search = ['chunks', 'sections', 'documents']
+            namespaces_to_search = ['documents']  # Document-level search only
 
             for ns in namespaces_to_search:
                 try:
@@ -270,37 +270,35 @@ Provide a comprehensive, authoritative response in Dave Ulrich's voice based on 
                 is_structured_query = self._is_structured_query(query)
                 
                 for match in search_results.matches:
-                    # Support both PDF and video metadata formats
-                    # PDFs use: chunk_text, doc_title, section_title, display_name
-                    # Videos use: content, title, section, filename, display_name
-                    content = match.metadata.get('content') or match.metadata.get('chunk_text') or match.metadata.get('section_text', '')
-                    title = match.metadata.get('title') or match.metadata.get('doc_title', '')
-                    section = match.metadata.get('section') or match.metadata.get('section_title', '')
+                    # Document-level metadata from 'documents' namespace
+                    # Contains: title, summary, concepts, file_type
+                    title = match.metadata.get('title', '')
+                    summary = match.metadata.get('summary', '')
+                    concepts = match.metadata.get('concepts', '')
+                    file_type = match.metadata.get('file_type', '')
 
-                    # Extract display_name (user-friendly name) or generate from filename
+                    # For document discovery, use summary as the content
+                    content = summary if summary else match.metadata.get('content') or match.metadata.get('chunk_text', '')
+
+                    # Extract display_name (user-friendly name) or generate from title
                     display_name = match.metadata.get('display_name')
                     if not display_name:
-                        # Generate a clean display name from the filename
-                        display_name = self.name_mapper.get_display_name(filename if filename else title)
+                        display_name = self.name_mapper.get_display_name(title)
 
-                    # Extract filename - PDFs store it in doc_title, videos have separate filename field
-                    filename = match.metadata.get('filename', '')
-                    if not filename and title:
-                        # PDFs have filename in doc_title (e.g., "February 2023 Playbook_final.pdf")
-                        filename = title
+                    # Use title as filename for documents namespace
+                    filename = match.metadata.get('filename', '') or title
 
                     documents.append({
                         'content': content,
+                        'summary': summary,  # Full document summary
+                        'concepts': concepts,  # Document concepts/keywords
                         'title': title,
-                        'display_name': display_name,  # Add display_name for UI
+                        'display_name': display_name,
                         'filename': filename,
-                        'page_number': match.metadata.get('page_number', ''),
+                        'file_type': file_type,
                         'score': float(match.score) if hasattr(match, 'score') else 0.0,
-                        'chunk_id': match.id if hasattr(match, 'id') else None,
-                        'start_time': match.metadata.get('start_time'),
-                        'end_time': match.metadata.get('end_time'),
-                        'content_type': match.metadata.get('content_type'),
-                        'section': section
+                        'document_id': match.id if hasattr(match, 'id') else None,
+                        'content_type': 'document'  # Mark as document-level result
                     })
                 
                 # Filter out AI training documents (documents that shouldn't appear in RAG results)
@@ -495,107 +493,34 @@ Provide a comprehensive, authoritative response in Dave Ulrich's voice based on 
     
     
     async def get_sources_for_query(self, query: str) -> List[Dict[str, Any]]:
-        """Get sources for a query without generating response - groups by document in assistant mode"""
+        """Get document-level sources for discovery mode - returns documents with summaries"""
         try:
             search_results = await self.search_context(query, limit=10)
             documents = search_results.get('documents', [])
-            logger.info(f"📋 get_sources_for_query: Received {len(documents)} documents")
+            logger.info(f"📋 get_sources_for_query: Received {len(documents)} document-level results")
 
-            # Detect intent
-            intent = self.detect_query_intent(query)
-            logger.info(f"📋 get_sources_for_query: Intent detected as '{intent}'")
+            # Document discovery mode: Return document-level results with summaries
+            # Each document from 'documents' namespace is already unique
+            sources = []
+            for doc in documents[:10]:  # Limit to top 10 documents
+                display_name = doc.get('display_name')
+                if not display_name:
+                    display_name = self.name_mapper.get_display_name(doc.get('filename', doc.get('title', '')))
 
-            if intent == "assist":
-                # Assistant mode: Group by document, ONE source per unique document
-                doc_groups = {}
-                logger.info(f"📋 Assistant mode: Processing {len(documents)} documents")
-                for doc in documents:
-                    filename = doc.get('filename', 'Unknown')
-                    logger.info(f"📋   Document: filename='{filename}', title='{doc.get('title', 'N/A')}', has_display_name={bool(doc.get('display_name'))}")
-                    if filename not in doc_groups:
-                        # Get display name from metadata, or generate from filename
-                        display_name = doc.get('display_name')
-                        if not display_name:
-                            display_name = self.name_mapper.get_display_name(filename)
+                sources.append({
+                    "title": display_name,
+                    "filename": doc.get('filename', ''),
+                    "content": doc.get('summary', doc.get('content', '')),  # Use full summary
+                    "summary": doc.get('summary', ''),  # Explicit summary field
+                    "concepts": doc.get('concepts', ''),  # Document concepts/keywords
+                    "score": doc.get('score', 0.0),
+                    "file_type": doc.get('file_type', ''),
+                    "type": "document",  # Mark as document-level result
+                    "document_id": doc.get('document_id')
+                })
 
-                        doc_groups[filename] = {
-                            'display_name': display_name,
-                            'filename': filename,
-                            'pages': set(),
-                            'scores': [],
-                            'content': doc.get('content', '')[:200],  # Preview from first chunk
-                            'start_time': doc.get('start_time'),
-                            'end_time': doc.get('end_time'),
-                            'content_type': doc.get('content_type')
-                        }
-
-                    # Add page number if present
-                    page_num = doc.get('page_number')
-                    if page_num:
-                        doc_groups[filename]['pages'].add(page_num)
-
-                    # Track scores for sorting
-                    doc_groups[filename]['scores'].append(doc.get('score', 0.0))
-
-                # Convert to source list - ONE entry per document
-                sources = []
-                logger.info(f"📋 Created {len(doc_groups)} document groups")
-                sorted_docs = sorted(doc_groups.items(),
-                                   key=lambda x: max(x[1]['scores']),
-                                   reverse=True)[:5]  # Limit to top 5 documents
-                logger.info(f"📋 Returning top {len(sorted_docs)} documents as sources")
-
-                for filename, doc_info in sorted_docs:
-                    # Determine which page/time to show
-                    page_number = None
-                    if doc_info['pages']:
-                        sorted_pages = sorted(doc_info['pages'])
-                        # For multiple pages, use the first one
-                        page_number = sorted_pages[0] if len(sorted_pages) == 1 else None
-
-                    sources.append({
-                        "title": doc_info['display_name'],  # Use display_name, not filename
-                        "filename": doc_info['filename'],
-                        "content": doc_info['content'],
-                        "score": max(doc_info['scores']),
-                        "page_number": page_number,
-                        "section": None,
-                        "type": "document_group",  # Mark as grouped
-                        "start_time": doc_info.get('start_time'),
-                        "end_time": doc_info.get('end_time'),
-                        "pages": list(sorted(doc_info['pages'])) if doc_info['pages'] else []  # All pages for this document
-                    })
-
-                logger.info(f"📋 Returning {len(sources)} sources in assistant mode")
-                return sources
-
-            else:
-                # Teacher mode: Return raw chunks (original behavior)
-                logger.info(f"📋 Teacher mode: Processing top {min(4, len(documents))} documents")
-                sources = []
-                for doc in documents[:4]:
-                    raw_section = doc.get('section', '')
-                    formatted_section = self._format_document_source(raw_section)
-
-                    # Get display name - try metadata first, then generate from filename
-                    display_name = doc.get('display_name')
-                    if not display_name:
-                        filename = doc.get('filename', doc.get('title', ''))
-                        display_name = self.name_mapper.get_display_name(filename)
-
-                    sources.append({
-                        "title": display_name,
-                        "filename": doc.get('filename', ''),
-                        "content": doc.get('content', '')[:200],
-                        "score": doc.get('score', 0.0),
-                        "page_number": doc.get('page_number'),
-                        "section": formatted_section,
-                        "type": "chunk",
-                        "start_time": doc.get('start_time'),
-                        "end_time": doc.get('end_time')
-                    })
-                logger.info(f"📋 Returning {len(sources)} sources in teacher mode")
-                return sources
+            logger.info(f"📋 Returning {len(sources)} document sources with summaries")
+            return sources
 
         except Exception as e:
             logger.error(f"❌ Error getting sources: {e}")
@@ -695,8 +620,8 @@ IMPORTANT INSTRUCTIONS (TEACHER MODE):
 
 Provide a comprehensive, authoritative response in Dave Ulrich's voice based on the context above."""
 
-            # Import the enhanced Ulrich system prompt
-            from ..prompts.ulrich_system_prompt import ULRICH_SYSTEM_PROMPT
+            # Import the configurable system prompt
+            from ..config.system_prompt import get_system_prompt
 
             # Choose system prompt based on context
             if context and context.get('type') == 'lesson':
@@ -713,8 +638,8 @@ Provide a comprehensive, authoritative response in Dave Ulrich's voice based on 
 
 You should be knowledgeable, patient, and focused on helping the student truly understand the material."""
             else:
-                # For general queries, use the Ulrich system prompt
-                system_prompt = ULRICH_SYSTEM_PROMPT
+                # For general queries, use the configurable system prompt
+                system_prompt = get_system_prompt()
 
             # Use async streaming
             import openai as openai_module
@@ -752,8 +677,8 @@ You should be knowledgeable, patient, and focused on helping the student truly u
         """Generate response using OpenAI"""
 
         try:
-            # Import the enhanced Ulrich system prompt
-            from ..prompts.ulrich_system_prompt import ULRICH_SYSTEM_PROMPT
+            # Import the configurable system prompt
+            from ..config.system_prompt import get_system_prompt
 
             response = openai.chat.completions.create(
                 model="gpt-4o-mini",  # Use GPT-4o-mini for faster responses
@@ -761,7 +686,7 @@ You should be knowledgeable, patient, and focused on helping the student truly u
                 messages=[
                     {
                         "role": "system",
-                        "content": ULRICH_SYSTEM_PROMPT
+                        "content": get_system_prompt()
                     },
                     {
                         "role": "user",

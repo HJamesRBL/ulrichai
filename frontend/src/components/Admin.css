@@ -364,3 +364,367 @@
   background: #ff4444;
   color: white;
 }
+
+/* System Prompt Section */
+.system-prompt-section {
+  margin-top: 3rem;
+  padding: 2rem;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+.system-prompt-header {
+  margin-bottom: 1.5rem;
+}
+
+.system-prompt-header h2 {
+  color: #071D49;
+  font-size: 1.3rem;
+  margin: 0 0 0.5rem 0;
+}
+
+.system-prompt-header p {
+  color: #666;
+  margin: 0;
+}
+
+.custom-badge {
+  display: inline-block;
+  background: #19A9FF;
+  color: white;
+  font-size: 0.75rem;
+  padding: 4px 10px;
+  border-radius: 12px;
+  margin-top: 8px;
+  font-weight: 500;
+}
+
+.prompt-editor textarea {
+  width: 100%;
+  padding: 12px;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  resize: vertical;
+  min-height: 300px;
+}
+
+.prompt-editor textarea:focus {
+  outline: none;
+  border-color: #0086D6;
+  box-shadow: 0 0 0 3px rgba(0, 134, 214, 0.1);
+}
+
+.prompt-actions {
+  margin-top: 16px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+/* Upload Section Header */
+.upload-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.upload-section-header h2 {
+  margin: 0;
+  color: #071D49;
+  font-size: 1.3rem;
+}
+
+.batch-upload-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: linear-gradient(135deg, #19A9FF, #0086D6);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.batch-upload-button:hover {
+  background: linear-gradient(135deg, #0086D6, #071D49);
+  transform: translateY(-1px);
+}
+
+/* Batch Upload Section */
+.batch-upload-section {
+  background: #f8fafc;
+  border: 2px dashed #e0e0e0;
+  border-radius: 8px;
+  padding: 1.5rem;
+}
+
+.batch-upload-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.batch-upload-header h3 {
+  margin: 0;
+  color: #071D49;
+  font-size: 1.1rem;
+}
+
+.batch-header-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.add-files-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: #0086D6;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.add-files-button:hover {
+  background: #006ba3;
+}
+
+.cancel-batch-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: #f5f5f5;
+  color: #666;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.cancel-batch-button:hover {
+  background: #ff4444;
+  color: white;
+  border-color: #ff4444;
+}
+
+/* Batch Empty State */
+.batch-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem;
+  color: #999;
+}
+
+.batch-empty-state p {
+  margin: 1rem 0 0.5rem;
+  font-size: 1rem;
+}
+
+.upload-label-inline {
+  color: #0086D6;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.upload-label-inline:hover {
+  color: #006ba3;
+}
+
+/* Batch Table */
+.batch-table-container {
+  overflow-x: auto;
+  margin-bottom: 1rem;
+}
+
+.batch-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  background: white;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.batch-table th {
+  text-align: left;
+  padding: 10px 8px;
+  background: #f5f5f5;
+  color: #071D49;
+  font-weight: 600;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  border-bottom: 2px solid #e0e0e0;
+  white-space: nowrap;
+}
+
+.batch-table td {
+  padding: 8px;
+  border-bottom: 1px solid #e0e0e0;
+  vertical-align: middle;
+}
+
+.batch-table tr:hover {
+  background: #f8fafc;
+}
+
+.filename-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #666;
+  font-size: 0.85rem;
+  max-width: 180px;
+}
+
+.filename-cell span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.remove-batch-file {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: #999;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.remove-batch-file:hover {
+  background: #ff4444;
+  color: white;
+}
+
+.batch-input {
+  width: 100%;
+  min-width: 120px;
+  padding: 6px 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  transition: border-color 0.2s ease;
+}
+
+.batch-input:focus {
+  outline: none;
+  border-color: #0086D6;
+}
+
+.batch-input-small {
+  min-width: 80px;
+}
+
+.batch-select {
+  width: 100%;
+  min-width: 100px;
+  padding: 6px 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  background: white;
+  cursor: pointer;
+}
+
+.batch-select:focus {
+  outline: none;
+  border-color: #0086D6;
+}
+
+/* Batch Action Section */
+.batch-action-section {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e0e0e0;
+}
+
+.batch-note {
+  color: #666;
+  font-size: 0.85rem;
+}
+
+/* Batch Upload Progress Bar */
+.batch-progress-container {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+}
+
+.batch-progress-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.batch-progress-count {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #071D49;
+}
+
+.batch-progress-bar {
+  height: 28px;
+  background: #e0e0e0;
+  border-radius: 14px;
+  overflow: hidden;
+  position: relative;
+}
+
+.batch-progress-fill {
+  height: 100%;
+  background: linear-gradient(135deg, #0086D6, #19A9FF);
+  border-radius: 14px;
+  transition: width 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 80px;
+}
+
+.batch-progress-stage {
+  color: white;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.batch-progress-percent {
+  text-align: right;
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: #0086D6;
+  font-weight: 600;
+}

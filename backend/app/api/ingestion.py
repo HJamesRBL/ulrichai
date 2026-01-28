@@ -762,17 +762,31 @@ async def list_documents(page: int = 1, limit: int = 50):
 @router.post("/bulk-upload")
 async def bulk_upload_documents(
     files: List[UploadFile] = File(...),
+    metadata_list: str = Form(None),
+    chunking_config: str = Form(None),
     background_tasks: BackgroundTasks = BackgroundTasks()
 ):
-    """Upload multiple documents at once"""
+    """Upload multiple documents at once with per-file metadata"""
+
+    # Parse metadata list - a JSON array where each item corresponds to a file
+    try:
+        file_metadata_list = json.loads(metadata_list) if metadata_list else []
+    except json.JSONDecodeError:
+        file_metadata_list = []
+
+    # Parse chunking config (same for all files)
+    try:
+        chunking_config_dict = json.loads(chunking_config) if chunking_config else {}
+    except json.JSONDecodeError:
+        chunking_config_dict = {}
 
     results = []
-    
-    for file in files:
+
+    for i, file in enumerate(files):
         # Validate file type
         file_ext = file.filename.split('.')[-1].lower()
         allowed_types = ['pdf', 'docx', 'doc', 'pptx', 'ppt', 'mp4', 'webm', 'mov', 'avi', 'mkv']
-        
+
         if file_ext not in allowed_types:
             results.append({
                 "filename": file.filename,
@@ -780,22 +794,40 @@ async def bulk_upload_documents(
                 "reason": f"Unsupported file type: .{file_ext}"
             })
             continue
-        
+
+        # Get metadata for this file (by index or by filename match)
+        file_metadata = {}
+        if i < len(file_metadata_list):
+            file_metadata = file_metadata_list[i]
+        else:
+            # Try to find by filename
+            for meta in file_metadata_list:
+                if meta.get('filename') == file.filename:
+                    file_metadata = meta
+                    break
+
         # Save file
         file_path = UPLOAD_DIR / f"{datetime.now().timestamp()}_{file.filename}"
-        
+
         try:
             with file_path.open("wb") as buffer:
                 shutil.copyfileobj(file.file, buffer)
-            
-            # Add to background processing
-            background_tasks.add_task(process_document_task, str(file_path), file_ext, file.filename)
-            
+
+            # Determine if video
+            video_extensions = ['mp4', 'webm', 'mov', 'avi', 'mkv']
+            is_video = file_ext in video_extensions
+
+            # Add to background processing with metadata
+            if is_video:
+                background_tasks.add_task(process_video_task, str(file_path), file_ext, file.filename, file_metadata)
+            else:
+                background_tasks.add_task(process_document_task, str(file_path), file_ext, file.filename, file_metadata, chunking_config_dict)
+
             results.append({
                 "filename": file.filename,
                 "status": "queued"
             })
-            
+
         except Exception as e:
             logger.error(f"Error processing {file.filename}: {e}")
             results.append({
@@ -803,7 +835,7 @@ async def bulk_upload_documents(
                 "status": "error",
                 "reason": str(e)
             })
-    
+
     return {
         "message": f"Processing {len(files)} documents",
         "results": results
@@ -811,34 +843,70 @@ async def bulk_upload_documents(
 
 @router.delete("/documents/{filename}")
 async def delete_document(filename: str, bucket: str = "documents"):
-    """Delete a document from Supabase storage and Pinecone vector database"""
+    """Delete a document from Supabase storage, metadata table, and Pinecone vector database"""
 
     try:
-        from ..core.database import supabase
+        from ..core.database import supabase, db
+        from ..models.document import DocumentMetadata
 
         if not supabase:
             raise HTTPException(status_code=503, detail="Storage service is not available")
 
-        # Delete from Supabase storage
+        deleted_from = []
+        errors = []
+
+        # 1. Delete from Supabase storage
         try:
             supabase.storage.from_(bucket).remove([filename])
+            deleted_from.append("storage")
             logger.info(f"Deleted {filename} from Supabase storage")
         except Exception as e:
             logger.error(f"Error deleting file from storage: {e}")
-            raise HTTPException(status_code=500, detail=f"Error deleting file from storage: {str(e)}")
+            errors.append(f"storage: {str(e)}")
 
-        # Delete from Pinecone vector database
+        # 2. Delete from document_metadata table (Supabase/PostgreSQL)
         try:
-            vector_store.delete_by_filename(filename)
-            logger.info(f"Deleted vectors for {filename} from Pinecone")
+            session = db.get_session()
+            if session:
+                # Find and delete the document metadata record
+                doc = session.query(DocumentMetadata).filter(
+                    DocumentMetadata.filename == filename
+                ).first()
+                if doc:
+                    session.delete(doc)
+                    session.commit()
+                    deleted_from.append("metadata")
+                    logger.info(f"Deleted metadata for {filename} from document_metadata table")
+                else:
+                    logger.warning(f"No metadata record found for {filename}")
+                session.close()
         except Exception as e:
-            logger.warning(f"Could not delete from Pinecone (continuing anyway): {e}")
+            logger.error(f"Error deleting from metadata table: {e}")
+            errors.append(f"metadata: {str(e)}")
 
-        return {
-            "message": f"Successfully deleted {filename} from all locations",
-            "filename": filename,
-            "bucket": bucket
-        }
+        # 3. Delete from Pinecone vector database (all namespaces)
+        try:
+            result = vector_store.delete_by_filename(filename)
+            deleted_from.append("pinecone")
+            logger.info(f"Deleted vectors for {filename} from Pinecone: {result}")
+        except Exception as e:
+            logger.warning(f"Could not delete from Pinecone: {e}")
+            errors.append(f"pinecone: {str(e)}")
+
+        # Return success if at least storage was deleted
+        if "storage" in deleted_from or "metadata" in deleted_from:
+            return {
+                "message": f"Successfully deleted {filename}",
+                "filename": filename,
+                "bucket": bucket,
+                "deleted_from": deleted_from,
+                "errors": errors if errors else None
+            }
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to delete document from any location. Errors: {errors}"
+            )
 
     except HTTPException:
         raise
@@ -875,3 +943,72 @@ async def download_document(filename: str, bucket: str = "documents"):
     except Exception as e:
         logger.error(f"Error generating download URL for {filename}: {e}")
         raise HTTPException(status_code=500, detail=f"Error generating download URL: {str(e)}")
+
+
+# ============== System Prompt Configuration ==============
+
+@router.get("/system-prompt")
+async def get_system_prompt():
+    """Get the current system prompt configuration"""
+    try:
+        from ..config.system_prompt import get_system_prompt, get_default_prompt
+
+        current_prompt = get_system_prompt()
+        default_prompt = get_default_prompt()
+        is_custom = current_prompt != default_prompt
+
+        return {
+            "prompt": current_prompt,
+            "is_custom": is_custom,
+            "default_prompt": default_prompt
+        }
+    except Exception as e:
+        logger.error(f"Error getting system prompt: {e}")
+        raise HTTPException(status_code=500, detail=f"Error getting system prompt: {str(e)}")
+
+
+@router.put("/system-prompt")
+async def update_system_prompt(data: dict):
+    """Update the system prompt"""
+    try:
+        from ..config.system_prompt import set_system_prompt
+
+        prompt = data.get('prompt', '')
+
+        if not prompt or not prompt.strip():
+            raise HTTPException(status_code=400, detail="Prompt cannot be empty")
+
+        success = set_system_prompt(prompt)
+
+        if success:
+            return {"message": "System prompt updated successfully", "success": True}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to save system prompt")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating system prompt: {e}")
+        raise HTTPException(status_code=500, detail=f"Error updating system prompt: {str(e)}")
+
+
+@router.post("/system-prompt/reset")
+async def reset_system_prompt():
+    """Reset system prompt to default"""
+    try:
+        from ..config.system_prompt import reset_system_prompt, get_default_prompt
+
+        success = reset_system_prompt()
+
+        if success:
+            return {
+                "message": "System prompt reset to default",
+                "success": True,
+                "prompt": get_default_prompt()
+            }
+        else:
+            raise HTTPException(status_code=500, detail="Failed to reset system prompt")
+
+    except Exception as e:
+        logger.error(f"Error resetting system prompt: {e}")
+        raise HTTPException(status_code=500, detail=f"Error resetting system prompt: {str(e)}")
