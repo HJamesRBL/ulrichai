@@ -3,7 +3,7 @@
 # Updated: Force cache bust for esbuild minifier fix
 
 # Stage 1: Build
-FROM node:18-alpine AS builder
+FROM node:20-alpine AS builder
 
 # Set working directory
 WORKDIR /app
