@@ -109,6 +109,7 @@ async def process_document_task(file_path: str, file_type: str, original_filenam
         # Process document with custom chunking
         doc_data = await custom_processor.process_document(file_path, file_type)
         doc_data['title'] = original_filename
+        doc_data['filename'] = original_filename
         
         # Generate embeddings for all levels
         logger.info("Generating embeddings...")
@@ -419,6 +420,7 @@ async def store_in_vector_db(doc_data: Dict, doc_embedding: List[float],
                 'id': doc_data['doc_id'],
                 'values': doc_embedding,
                 'metadata': {
+                    'filename': doc_data.get('filename', doc_data.get('title', '')),
                     'title': doc_data['title'],
                     'summary': doc_data['summary'],
                     'concepts': ','.join(doc_data['concepts'][:10]),
@@ -435,6 +437,7 @@ async def store_in_vector_db(doc_data: Dict, doc_embedding: List[float],
                 'id': f"{doc_data['doc_id']}_section_{i}",
                 'values': section_embeddings[i]['embedding'],
                 'metadata': {
+                    'filename': doc_data.get('filename', doc_data.get('title', '')),
                     'doc_id': doc_data['doc_id'],
                     'doc_title': doc_data['title'],
                     'section_title': section['title'],
@@ -452,6 +455,7 @@ async def store_in_vector_db(doc_data: Dict, doc_embedding: List[float],
                 'id': f"{doc_data['doc_id']}_chunk_{i}",
                 'values': chunk_embeddings[i],
                 'metadata': {
+                    'filename': doc_data.get('filename', doc_data.get('title', '')),
                     'doc_id': doc_data['doc_id'],
                     'doc_title': doc_data['title'],
                     'display_name': metadata.get('displayName', doc_data['title']),  # Add display name for UI

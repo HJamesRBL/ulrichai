@@ -62,6 +62,7 @@ async def reindex_all_documents():
             # Process document (this extracts page numbers)
             doc_data = await processor.process_document(tmp_path, file_ext)
             doc_data['title'] = filename
+            doc_data['filename'] = filename
 
             logger.info(f"  Generated {len(doc_data['chunks'])} chunks")
 
@@ -94,6 +95,7 @@ async def reindex_all_documents():
                 'id': doc_data['doc_id'],
                 'values': doc_embedding,
                 'metadata': {
+                    'filename': filename,
                     'title': doc_data['title'],
                     'summary': doc_data['summary'][:1000],
                     'concepts': doc_data['concepts'][:500],
@@ -109,6 +111,7 @@ async def reindex_all_documents():
                     'id': f"{doc_data['doc_id']}_section_{i}",
                     'values': section_embeddings[i]['embedding'],
                     'metadata': {
+                        'filename': filename,
                         'doc_id': doc_data['doc_id'],
                         'doc_title': doc_data['title'],
                         'section_title': section['title'],
@@ -126,6 +129,7 @@ async def reindex_all_documents():
                     'id': f"{doc_data['doc_id']}_chunk_{i}",
                     'values': chunk_embeddings[i],
                     'metadata': {
+                        'filename': filename,
                         'doc_id': doc_data['doc_id'],
                         'doc_title': doc_data['title'],
                         'display_name': doc_metadata.display_name,  # Add display name for UI
