@@ -11,8 +11,6 @@ import { SuggestedQuestions } from './SuggestedQuestions';
 import { ChatHeader } from './ChatHeader';
 import toast from 'react-hot-toast';
 import { config } from '../../config';
-import DocumentViewer from '../DocumentViewer';
-import VideoViewer from '../VideoViewer';
 
 interface Source {
   title: string;
@@ -48,7 +46,6 @@ export const Chat: React.FC = () => {
   const theme = useTheme();
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [selectedDocument, setSelectedDocument] = useState<Source | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
@@ -221,15 +218,11 @@ export const Chat: React.FC = () => {
     console.log('Source clicked:', source);
 
     try {
-      const isVideo = source.content_type === 'video' ||
-                     source.content_type === 'lesson_video' ||
-                     (source.start_time !== undefined && source.start_time !== null);
-
       let documentUrl = source.fileUrl;
 
+      // Try to get the document URL from the download endpoint
       if (!documentUrl) {
         try {
-          console.log('Trying download endpoint...');
           const urlResponse = await fetch(`${config.API_BASE_URL}/api/ingestion/documents/${encodeURIComponent(source.filename)}/download`);
           if (urlResponse.ok) {
             const urlData = await urlResponse.json();
@@ -240,9 +233,9 @@ export const Chat: React.FC = () => {
         }
       }
 
+      // Fallback: try to find URL in documents list
       if (!documentUrl) {
         try {
-          console.log('Trying documents list endpoint...');
           const docsResponse = await fetch(`${config.API_BASE_URL}/api/ingestion/documents?limit=100`);
           const docsData = await docsResponse.json();
           const doc = docsData.documents.find((d: any) => d.filename === source.filename);
@@ -254,27 +247,17 @@ export const Chat: React.FC = () => {
         }
       }
 
-      if (!documentUrl) {
-        documentUrl = `${config.API_BASE_URL}/api/documents/${encodeURIComponent(source.filename)}`;
+      if (documentUrl) {
+        // Open document in a new tab
+        window.open(documentUrl, '_blank');
+        toast.success(`Opening ${source.title}...`);
+      } else {
+        toast.error('Could not find document URL');
       }
-
-      setSelectedDocument({
-        ...source,
-        fileUrl: documentUrl
-      });
-
-      toast(`Opening ${source.title}...`, {
-        icon: isVideo ? '🎥' : '📄',
-        duration: 1000,
-      });
     } catch (error) {
       console.error('Error in handleSourceClick:', error);
-      toast.error('Failed to open source');
+      toast.error('Failed to open document');
     }
-  };
-
-  const handleCloseDocument = () => {
-    setSelectedDocument(null);
   };
 
   return (
@@ -384,79 +367,6 @@ export const Chat: React.FC = () => {
         </Container>
       </Box>
 
-      {/* Document/Video Viewer Modal Overlay */}
-      {selectedDocument && (
-        <Box
-          sx={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            zIndex: 1300,
-            backgroundColor: 'rgba(0, 0, 0, 0.7)',
-            backdropFilter: 'blur(4px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            p: 3,
-            animation: 'fadeIn 0.2s ease-out',
-            '@keyframes fadeIn': {
-              from: { opacity: 0 },
-              to: { opacity: 1 },
-            },
-          }}
-          onClick={handleCloseDocument}
-        >
-          <Box
-            sx={{
-              width: '90%',
-              maxWidth: '1200px',
-              height: '90vh',
-              backgroundColor: theme.palette.background.paper,
-              borderRadius: 3,
-              boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
-              display: 'flex',
-              flexDirection: 'column',
-              overflow: 'hidden',
-              animation: 'slideUp 0.3s ease-out',
-              '@keyframes slideUp': {
-                from: {
-                  opacity: 0,
-                  transform: 'translateY(20px) scale(0.98)',
-                },
-                to: {
-                  opacity: 1,
-                  transform: 'translateY(0) scale(1)',
-                },
-              },
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {(selectedDocument.content_type === 'video' ||
-              selectedDocument.content_type === 'lesson_video' ||
-              (selectedDocument.start_time !== undefined && selectedDocument.start_time !== null)) ? (
-              <VideoViewer
-                filename={selectedDocument.filename}
-                title={selectedDocument.title}
-                url={selectedDocument.fileUrl}
-                startTime={selectedDocument.start_time}
-                allowDownload={true}
-                onClose={handleCloseDocument}
-              />
-            ) : (
-              <DocumentViewer
-                filename={selectedDocument.filename}
-                pageNumber={selectedDocument.page_number}
-                title={selectedDocument.title}
-                url={selectedDocument.fileUrl}
-                allowDownload={true}
-                onClose={handleCloseDocument}
-              />
-            )}
-          </Box>
-        </Box>
-      )}
     </Box>
   );
 };
