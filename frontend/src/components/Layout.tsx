@@ -11,12 +11,8 @@ import {
   ListItemButton,
   ListItemIcon,
   ListItemText,
-  Avatar,
-  Menu,
-  MenuItem,
   Divider,
   Tooltip,
-  Badge,
   useTheme,
   useMediaQuery,
   Stack,
@@ -26,9 +22,6 @@ import {
   Menu as MenuIcon,
   Chat as ChatIcon,
   AdminPanelSettings as AdminIcon,
-  Settings as SettingsIcon,
-  Notifications as NotificationsIcon,
-  AccountCircle as AccountIcon,
   Brightness4 as DarkModeIcon,
   Brightness7 as LightModeIcon,
   Close as CloseIcon,
@@ -46,20 +39,11 @@ const Layout: React.FC<LayoutProps> = ({ children, isDarkMode, setIsDarkMode }) 
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [anchorElUser, setAnchorElUser] = useState<null | HTMLElement>(null);
   const navigate = useNavigate();
   const location = useLocation();
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
-  };
-
-  const handleUserMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
-    setAnchorElUser(event.currentTarget);
-  };
-
-  const handleUserMenuClose = () => {
-    setAnchorElUser(null);
   };
 
   const menuItems = [
@@ -212,38 +196,6 @@ const Layout: React.FC<LayoutProps> = ({ children, isDarkMode, setIsDarkMode }) 
           </ListItemButton>
         ))}
       </List>
-
-      {/* User Section */}
-      <Divider />
-      <Box sx={{ p: 2 }}>
-        <Box
-          sx={{
-            p: 1.5,
-            borderRadius: 2,
-            backgroundColor: theme.palette.action.hover,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 1.5,
-            cursor: 'pointer',
-            '&:hover': {
-              backgroundColor: theme.palette.action.selected,
-            },
-          }}
-          onClick={handleUserMenuOpen}
-        >
-          <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.main' }}>
-            U
-          </Avatar>
-          <Box sx={{ flexGrow: 1 }}>
-            <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
-              User Name
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              Free Plan
-            </Typography>
-          </Box>
-        </Box>
-      </Box>
     </Box>
   );
 
@@ -283,59 +235,8 @@ const Layout: React.FC<LayoutProps> = ({ children, isDarkMode, setIsDarkMode }) 
               {isDarkMode ? <LightModeIcon /> : <DarkModeIcon />}
             </IconButton>
           </Tooltip>
-
-          {/* Notifications */}
-          <Tooltip title="Notifications">
-            <IconButton color="inherit">
-              <Badge badgeContent={3} color="error">
-                <NotificationsIcon />
-              </Badge>
-            </IconButton>
-          </Tooltip>
-
-          {/* User Avatar */}
-          <Tooltip title="Account">
-            <IconButton onClick={handleUserMenuOpen} sx={{ p: 0, ml: 2 }}>
-              <Avatar sx={{ width: 36, height: 36, bgcolor: 'primary.main' }}>U</Avatar>
-            </IconButton>
-          </Tooltip>
         </Toolbar>
       </AppBar>
-
-      {/* User Menu */}
-      <Menu
-        sx={{ mt: '45px' }}
-        id="menu-appbar"
-        anchorEl={anchorElUser}
-        anchorOrigin={{
-          vertical: 'top',
-          horizontal: 'right',
-        }}
-        keepMounted
-        transformOrigin={{
-          vertical: 'top',
-          horizontal: 'right',
-        }}
-        open={Boolean(anchorElUser)}
-        onClose={handleUserMenuClose}
-      >
-        <MenuItem onClick={handleUserMenuClose}>
-          <ListItemIcon>
-            <AccountIcon fontSize="small" />
-          </ListItemIcon>
-          <ListItemText>Profile</ListItemText>
-        </MenuItem>
-        <MenuItem onClick={handleUserMenuClose}>
-          <ListItemIcon>
-            <SettingsIcon fontSize="small" />
-          </ListItemIcon>
-          <ListItemText>Settings</ListItemText>
-        </MenuItem>
-        <Divider />
-        <MenuItem onClick={handleUserMenuClose}>
-          <ListItemText>Sign Out</ListItemText>
-        </MenuItem>
-      </Menu>
 
       {/* Sidebar Drawer */}
       <Box
