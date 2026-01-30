@@ -1,7 +1,6 @@
 import React from 'react';
 import {
   Box,
-  Chip,
   Stack,
   Typography,
   Fade,
@@ -21,8 +20,6 @@ interface SuggestedQuestionsProps {
   onQuestionClick: (question: string) => void;
   visible?: boolean;
 }
-
-const MotionChip = motion(Chip);
 
 const defaultQuestions = [
   {
@@ -259,48 +256,6 @@ export const SuggestedQuestions: React.FC<SuggestedQuestionsProps> = ({
             })}
           </Box>
         </motion.div>
-
-        {/* Quick Tips with Modern Design */}
-        <Box
-          sx={{
-            mt: 4,
-            p: 2.5,
-            borderRadius: 2,
-            background: 'linear-gradient(135deg, rgba(0, 134, 214, 0.05) 0%, rgba(25, 169, 255, 0.05) 100%)',
-            border: '1px solid',
-            borderColor: 'rgba(0, 134, 214, 0.1)',
-          }}
-        >
-          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
-            {[
-              { icon: '💡', text: 'Type @ to select an agent' },
-              { icon: '📎', text: 'Drag & drop files' },
-              { icon: '⌨️', text: 'Press Tab to autocomplete' },
-            ].map((tip, i) => (
-              <Box
-                key={i}
-                sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 1,
-                  flex: 1,
-                }}
-              >
-                <Box
-                  sx={{
-                    fontSize: '1.25rem',
-                    filter: 'grayscale(0.2)',
-                  }}
-                >
-                  {tip.icon}
-                </Box>
-                <Typography variant="caption" color="text.secondary" fontWeight={500}>
-                  {tip.text}
-                </Typography>
-              </Box>
-            ))}
-          </Stack>
-        </Box>
       </Box>
     </Fade>
   );

@@ -3,15 +3,12 @@ import {
   Box,
   Container,
   Stack,
-  Divider,
   useTheme,
-  Paper,
 } from '@mui/material';
 import { MessageBubble } from './MessageBubble';
 import { ChatInput } from './ChatInput';
 import { SuggestedQuestions } from './SuggestedQuestions';
 import { ChatHeader } from './ChatHeader';
-import { Loading } from '../common/Loading';
 import toast from 'react-hot-toast';
 import { config } from '../../config';
 import DocumentViewer from '../DocumentViewer';
@@ -21,14 +18,13 @@ interface Source {
   title: string;
   filename: string;
   content: string;
-  summary?: string;  // Full document summary
-  concepts?: string;  // Comma-separated concepts/keywords
+  summary?: string;
+  concepts?: string;
   score: number;
   document_id?: string;
   type?: string;
   file_type?: string;
   fileUrl?: string;
-  // Legacy fields for backwards compatibility
   chunk_id?: string;
   page_number?: number;
   section?: string;
@@ -51,10 +47,7 @@ interface Message {
 export const Chat: React.FC = () => {
   const theme = useTheme();
   const [messages, setMessages] = useState<Message[]>([]);
-  // Modal overlay enabled
-  const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [activeAgent, setActiveAgent] = useState('general');
   const [selectedDocument, setSelectedDocument] = useState<Source | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
@@ -70,7 +63,6 @@ export const Chat: React.FC = () => {
   const handleSendMessage = async (message: string) => {
     if (!message.trim() || isLoading) return;
 
-    // Add user message
     const userMessage: Message = {
       id: `msg-${Date.now()}-user`,
       content: message,
@@ -81,7 +73,6 @@ export const Chat: React.FC = () => {
     setMessages(prev => [...prev, userMessage]);
     setIsLoading(true);
 
-    // Add assistant message with streaming indicator
     const assistantMessageId = `msg-${Date.now()}-assistant`;
     const streamingMessage: Message = {
       id: assistantMessageId,
@@ -103,19 +94,16 @@ export const Chat: React.FC = () => {
         },
         body: JSON.stringify({
           query: message,
-          agent: activeAgent,
           session_id: `session-${Date.now()}`,
         }),
       });
 
       console.log('Response status:', response.status, response.statusText);
-      console.log('Response headers:', response.headers);
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      // Read the stream
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
 
@@ -138,7 +126,7 @@ export const Chat: React.FC = () => {
         console.log('Received chunk:', chunk);
         buffer += chunk;
         const lines = buffer.split('\n');
-        buffer = lines.pop() || ''; // Keep incomplete line in buffer
+        buffer = lines.pop() || '';
 
         for (const line of lines) {
           if (line.startsWith('data: ')) {
@@ -150,10 +138,8 @@ export const Chat: React.FC = () => {
                 sources = data.sources || [];
                 console.log('Received initial sources:', sources.length);
               } else if (data.type === 'sources_update') {
-                // Update sources when they arrive later
                 sources = data.sources || [];
                 console.log('Updated sources:', sources.length);
-                // Update the message with new sources
                 setMessages(prev => prev.map(msg =>
                   msg.id === assistantMessageId
                     ? { ...msg, sources }
@@ -161,7 +147,6 @@ export const Chat: React.FC = () => {
                 ));
               } else if (data.type === 'content') {
                 accumulatedContent += data.content;
-                // Update message with accumulated content
                 setMessages(prev => prev.map(msg =>
                   msg.id === assistantMessageId
                     ? {
@@ -173,7 +158,6 @@ export const Chat: React.FC = () => {
                     : msg
                 ));
               } else if (data.type === 'done') {
-                // Mark streaming as complete
                 setMessages(prev => prev.map(msg =>
                   msg.id === assistantMessageId
                     ? {
@@ -197,11 +181,7 @@ export const Chat: React.FC = () => {
       toast.success('Response completed!');
     } catch (error) {
       console.error('Streaming error details:', error);
-      console.error('Error type:', error instanceof Error ? error.constructor.name : typeof error);
-      console.error('Error message:', error instanceof Error ? error.message : String(error));
-      console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
 
-      // Update the streaming message with error
       setMessages(prev => prev.map(msg =>
         msg.id === assistantMessageId
           ? {
@@ -222,93 +202,38 @@ export const Chat: React.FC = () => {
     handleSendMessage(question);
   };
 
-  const handleFileUpload = (file: File) => {
-    toast.success(`File "${file.name}" uploaded successfully!`);
-    // TODO: Implement actual file upload logic
-  };
-
-  const handleClearChat = () => {
-    setMessages([]);
-    toast.success('Chat cleared');
-  };
-
-  const handleExportChat = () => {
-    const chatContent = messages
-      .map(msg => `${msg.role === 'user' ? 'You' : 'Assistant'}: ${msg.content}`)
-      .join('\n\n');
-
-    const blob = new Blob([chatContent], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `chat-export-${new Date().toISOString()}.txt`;
-    a.click();
-
-    toast.success('Chat exported');
-  };
-
-  const handleShareChat = () => {
-    // TODO: Implement share functionality
-    toast('Share feature coming soon!', {
-      icon: '🔗',
-    });
-  };
-
-  const handleSaveChat = () => {
-    // TODO: Implement save functionality
-    toast('Save feature coming soon!', {
-      icon: '💾',
-    });
-  };
-
   const handleNewChat = () => {
     setMessages([]);
     toast.success('Started new chat');
   };
 
-  const handleAgentChange = (agent: string) => {
-    setActiveAgent(agent);
-    toast.success(`Switched to ${agent} agent`);
-  };
-
   const handleRegenerateResponse = () => {
-    // TODO: Implement regenerate functionality
     toast('Regenerate feature coming soon!', {
       icon: '🔄',
     });
   };
 
   const handleFeedback = (messageId: string, feedback: 'up' | 'down') => {
-    // TODO: Implement feedback functionality
     console.log(`Feedback ${feedback} for message ${messageId}`);
   };
 
   const handleSourceClick = async (source: Source) => {
     console.log('Source clicked:', source);
-    console.log('Starting handleSourceClick for:', source.filename);
 
     try {
-      // Detect if this is a video source
       const isVideo = source.content_type === 'video' ||
                      source.content_type === 'lesson_video' ||
                      (source.start_time !== undefined && source.start_time !== null);
 
-      console.log('Is video source:', isVideo);
-      console.log('Attempting to get', isVideo ? 'video' : 'document', 'URL');
-
-      // Get the document/video URL from multiple sources
       let documentUrl = source.fileUrl;
 
       if (!documentUrl) {
-        // Try to fetch from the download endpoint (let backend determine bucket)
         try {
           console.log('Trying download endpoint...');
           const urlResponse = await fetch(`${config.API_BASE_URL}/api/ingestion/documents/${encodeURIComponent(source.filename)}/download`);
-          console.log('Download endpoint response:', urlResponse.status);
           if (urlResponse.ok) {
             const urlData = await urlResponse.json();
             documentUrl = urlData.url;
-            console.log('Got URL from download endpoint:', documentUrl);
           }
         } catch (error) {
           console.error('Error getting URL from download endpoint:', error);
@@ -316,16 +241,13 @@ export const Chat: React.FC = () => {
       }
 
       if (!documentUrl) {
-        // Fallback - query the documents endpoint to get the fileUrl
         try {
           console.log('Trying documents list endpoint...');
           const docsResponse = await fetch(`${config.API_BASE_URL}/api/ingestion/documents?limit=100`);
-          console.log('Documents list response:', docsResponse.status);
           const docsData = await docsResponse.json();
           const doc = docsData.documents.find((d: any) => d.filename === source.filename);
           if (doc && doc.fileUrl) {
             documentUrl = doc.fileUrl;
-            console.log('Got URL from documents list:', documentUrl);
           }
         } catch (error) {
           console.error('Error fetching documents list:', error);
@@ -333,12 +255,9 @@ export const Chat: React.FC = () => {
       }
 
       if (!documentUrl) {
-        // Final fallback - use direct endpoint (let backend determine bucket)
         documentUrl = `${config.API_BASE_URL}/api/documents/${encodeURIComponent(source.filename)}`;
-        console.log('Using direct endpoint:', documentUrl);
       }
 
-      // Set the selected document with the proper URL
       setSelectedDocument({
         ...source,
         fileUrl: documentUrl
@@ -350,7 +269,6 @@ export const Chat: React.FC = () => {
       });
     } catch (error) {
       console.error('Error in handleSourceClick:', error);
-      console.error('Error stack:', error instanceof Error ? error.stack : 'No stack');
       toast.error('Failed to open source');
     }
   };
@@ -372,14 +290,7 @@ export const Chat: React.FC = () => {
       {/* Chat Header */}
       <ChatHeader
         conversationTitle={messages.length > 0 ? 'Active Conversation' : 'New Conversation'}
-        activeAgent={activeAgent}
-        messageCount={messages.length}
-        onClearChat={handleClearChat}
-        onExportChat={handleExportChat}
-        onShareChat={handleShareChat}
-        onSaveChat={handleSaveChat}
         onNewChat={handleNewChat}
-        onAgentChange={handleAgentChange}
       />
 
       {/* Messages Area */}
@@ -467,7 +378,6 @@ export const Chat: React.FC = () => {
         <Container maxWidth="lg">
           <ChatInput
             onSendMessage={handleSendMessage}
-            onFileUpload={handleFileUpload}
             isLoading={isLoading}
             disabled={isLoading}
           />
@@ -523,7 +433,6 @@ export const Chat: React.FC = () => {
             }}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Check if source is a video */}
             {(selectedDocument.content_type === 'video' ||
               selectedDocument.content_type === 'lesson_video' ||
               (selectedDocument.start_time !== undefined && selectedDocument.start_time !== null)) ? (
