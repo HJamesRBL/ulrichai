@@ -73,11 +73,11 @@ export const SourceCards: React.FC<SourceCardsProps> = ({ sources, onSourceClick
   // Clean up AI-generated intro text from summaries
   const cleanSummary = (text: string): string => {
     if (!text) return '';
-    // Remove common AI preamble patterns
+    // Only remove complete preamble phrases that end with colon or period
     const patterns = [
-      /^Here is a comprehensive summary of the document[^:]*:\s*/i,
-      /^Here is a summary[^:]*:\s*/i,
-      /^This document (discusses|covers|explores|examines|provides)[^.]*\.\s*/i,
+      /^Here is a \d+-?\d* sentence summary[^:]*:\s*/i,
+      /^Here is a (comprehensive |brief |concise )?summary[^:]*:\s*/i,
+      /^Here's a (comprehensive |brief |concise )?summary[^:]*:\s*/i,
       /^Summary:\s*/i,
     ];
     let cleaned = text;

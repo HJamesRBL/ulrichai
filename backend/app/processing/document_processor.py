@@ -359,13 +359,16 @@ class DocumentProcessor:
             
             response = self.anthropic.messages.create(
                 model="claude-3-haiku-20240307",
-                max_tokens=150,
+                max_tokens=75,
                 messages=[{
                     "role": "user",
                     "content": f"""Summarize this document in 1-2 sentences. Be direct and concise - do not include any preamble like "This document discusses" or "Here is a summary". Just state what the document covers.
 
-                    Document text:
-                    {truncated_text}"""
+GOOD: "A framework for developing leadership capabilities in mid-level managers."
+BAD: "This document presents a framework for developing leadership capabilities."
+
+Document:
+{truncated_text}"""
                 }]
             )
             return response.content[0].text
